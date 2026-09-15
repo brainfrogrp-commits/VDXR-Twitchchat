@@ -1,0 +1,15 @@
+# Godot 4+ specific ignores
+.godot/
+.import/
+export.cfg
+export_presets.cfg
+
+# Exported builds
+/build/
+*.exe
+*.pck
+*.apk
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
