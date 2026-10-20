@@ -1,94 +1,85 @@
-# VDXR Twitch Chat
+# BrainFrog Voice
 
-A small, grabbable VR panel that shows your live Twitch chat. Built with Godot 4's
-built-in OpenXR support, meant to run through Virtual Desktop's own OpenXR runtime
-(VDXR) instead of SteamVR.
+A friendly frog who reads your Twitch chat out loud, in a voice you pick.
 
-## What this is (and isn't)
-
-This is a **standalone VR app**: it boots its own OpenXR session, shows the chat
-panel, and lets you grab/move/lock it. It is **not** an overlay that floats on top
-of a separate game while that game is also running.
-
-That limitation isn't a shortcut taken here — it's a real gap in the ecosystem
-today. LIV can overlay games on SteamVR because SteamVR exposes `IVROverlay`, a
-compositor-level API for a second app to draw on top of another app's view.
-Vanilla OpenXR has an equivalent concept (`XR_EXTX_overlay`), but as of writing:
-
-- Virtual Desktop's VDXR runtime does not implement it.
-- Godot's OpenXR integration doesn't fully support it either (the extension has
-  had an open, unmerged draft PR since 2021).
-
-So there is currently no clean way to have this app render "over" another OpenXR
-game via VDXR. If that ever changes upstream, this app's grab/lock logic doesn't
-need to change — only the session setup would need an overlay flag.
-
-In the meantime, if you want chat visible *while actively gaming*, Virtual
-Desktop's own in-headset dashboard/browser panel (bring it up with your usual VD
-shortcut) can show a browser pointed at Twitch's own chat popout
-(`https://www.twitch.tv/popout/<channel>/chat`) — that rides on VD's own
-compositor rather than needing OpenXR overlay support.
-
-## Requirements
-
-- [Godot 4.3+](https://godotengine.org/download) (Standard build; no C# needed).
-- Virtual Desktop, with **Streaming > Developer > OpenXR Runtime** set to
-  "Virtual Desktop" (VDXR) instead of SteamVR.
-- A Quest (or other headset supported by Virtual Desktop) connected via VD.
-
-## Setup
-
-1. Edit `config.ini` in this folder and set your channel name:
-   ```ini
-   [twitch]
-   channel="your_channel_name"
-   ```
-2. Open the project in Godot (`project.godot`).
-3. Start Virtual Desktop and make sure VDXR is the active OpenXR runtime
-   (Virtual Desktop Streaming settings > Developer > OpenXR Runtime).
-4. Run the project (F5) with your headset connected. It should launch straight
-   into VR with the chat panel floating in front of you.
-
-To run outside the editor, export it (Project > Export) as a Windows Desktop
-build, then launch the resulting `.exe` with Virtual Desktop's OpenXR runtime
-active. You can override the channel per-launch without touching `config.ini`:
-
-```
-VDXRTwitchChat.exe --channel=your_channel_name
-```
-
-## Controls
-
-- **Grip button**: grab the chat panel when your hand is near it; move it
-  anywhere in space.
-- **Face button (A/X)** while holding it: lock the panel to that hand at its
-  current offset — hold it against your forearm and lock it there to get a
-  wrist-mounted chat display. Press again to unlock and leave it floating
-  freely in world space wherever it currently is.
+This is a plain background app, not a VR scene or an overlay: it has no window in your
+headset at all. It just listens to your chat and talks through your speakers/headset
+audio, so it keeps working no matter what you're playing -- VR, flatscreen, anything --
+without needing any of the VR-overlay plumbing that doesn't actually exist outside
+SteamVR today.
 
 ## How it works
+`Twitch chat (anonymous, read-only) -> OpenRouter LLM (BrainFrog persona) -> Inworld TTS -> your speakers`
 
-- `scripts/twitch_chat_client.gd` — autoloaded singleton (`TwitchChat`) that
-  connects anonymously (read-only, no OAuth token needed) to Twitch's IRC-over-
-  WebSocket endpoint, joins your channel, and emits a signal per chat message
-  (with the sender's name and Twitch-assigned color). It auto-reconnects if the
-  connection drops.
-- `scripts/chat_display.gd` — feeds incoming messages into a `RichTextLabel`
-  inside a `SubViewport`, capped to the last 150 lines, auto-scrolling.
-- `scripts/panel_mesh_setup.gd` — projects that `SubViewport`'s live texture
-  onto a small unshaded quad in 3D space, which is what you actually see and
-  grab in VR.
-- `scripts/grabbable_chat_panel.gd` — grab/lock interaction described above.
-- `scripts/xr_manager.gd` — initializes the OpenXR session on startup.
+New chat messages are batched and read aloud automatically every so often (configurable).
+There's no mic, no wake word, no push-to-talk: BrainFrog doesn't listen for anything, he
+just reads what shows up in chat.
 
-## Troubleshooting
+## Run (Windows)
+1. Install Python 3.10+.
+2. Double-click **`START_BRAINFROG.bat`** in this folder. If double-clicking a `.bat` does
+   nothing on your PC, double-click **`START_BRAINFROG.vbs`** instead. Either starts the
+   app and opens its settings page. First run installs dependencies.
+3. The settings page opens at http://127.0.0.1:5858. Enter your **Inworld** and
+   **OpenRouter** keys, pick a voice, enter your Twitch channel, tick **Let BrainFrog
+   read my live chat**, then **Save settings**.
+4. Start your game (VR or otherwise) as usual, in whatever way you normally launch it.
+   BrainFrog keeps running and reading chat in the background regardless.
 
-- **Nothing happens / no VR view**: check the Godot output console for the
-  OpenXR error. Most commonly VDXR isn't the active runtime, or Virtual Desktop
-  isn't streaming yet when you press Play.
-- **Panel shows "connecting..." forever**: check your internet connection and
-  that the channel name in `config.ini` is spelled correctly (no `#` prefix).
-- **Grip/lock buttons don't respond**: these use Godot's default OpenXR action
-  names (`grip_click`, `ax_button`). If your controller binding differs, open
-  Project Settings > XR > OpenXR > Action Map and confirm those actions are
-  bound, or adjust the constants at the top of `grabbable_chat_panel.gd`.
+Settings and keys are stored in `%USERPROFILE%\.brainfrog_voice\config.json`, outside this
+repo. The server only listens on localhost.
+
+### Keys you'll need
+- **Inworld** (text-to-speech): pick any voice from your Inworld account, or paste a
+  Voice ID directly if the list doesn't load.
+- **OpenRouter** (the language model that gives BrainFrog his personality): any chat
+  model slug works; the default is a small, fast one.
+
+## Settings
+
+| Section | What it controls |
+|---|---|
+| Voice (Inworld) | API key, which voice BrainFrog speaks with, speaking rate, volume. **Preview voice** plays a test line with the current settings. |
+| Brain (OpenRouter) | API key, model, and an optional free-text box for extra personality notes (e.g. "mention my channel name sometimes"). |
+| Twitch chat | Enable/disable, channel name, how many messages get read per batch, minimum seconds between automatic readings, the bot-ignore list, a custom blocked-words list, and the slur filter toggle. **Read chat now** forces an immediate reading. |
+
+## Persona
+BrainFrog's personality lives in `app/frog_voice/persona.py`: warm, upbeat, a little
+frog-themed phrasing used sparingly, never mean to viewers. Edit `CORE_PERSONA` there if
+you want to adjust his voice; the "extra personality notes" field on the settings page
+layers on top without needing to touch code.
+
+## Safety
+Chat text from viewers is always handed to the model inside a clearly marked, explicitly
+untrusted block, with instructions never to follow anything inside it -- just to read it
+aloud. A built-in filter (on by default) also skips any message or username containing a
+slur, resistant to the usual symbol/spacing tricks, and you can add your own blocked words
+on the settings page. Anything a moderator deletes, or from a banned/timed-out user, is
+removed from what BrainFrog has buffered, so he can't read out something that was taken
+down. None of this is a guarantee against a determined viewer -- keep an eye on your
+blocked-words list if this is live on stream.
+
+## Tests
+```
+cd app && python -m unittest discover -s tests
+```
+
+## Project layout
+```
+app/
+  server.py              Local Flask server + API, binds to 127.0.0.1 only
+  frog_voice/
+    config.py            Settings persisted to ~/.brainfrog_voice/config.json
+    persona.py           BrainFrog's personality (system prompt)
+    twitch.py            Anonymous Twitch IRC client, moderation-aware buffer, cursor
+    slurs.py             Slur/evasion detection used to filter chat before it's read
+    engine.py            Watches chat, batches new messages, drives the LLM + TTS
+    llm.py               OpenRouter chat completions (streaming)
+    inworld.py            Inworld text-to-speech
+    pipeline.py           Streams LLM sentences into TTS with no gaps between them
+    streaming.py          Turns a token stream into whole sentences
+    speech_io.py          MP3 playback
+    lifecycle.py          Clean shutdown when the console window closes
+  web/index.html          Settings page
+  tests/                  Unit tests (no network, no real audio)
+```

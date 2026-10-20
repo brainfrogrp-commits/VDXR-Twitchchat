@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BrainFrog Voice</title>
+<style>
+  :root { --bg:#0e1611; --panel:#162119; --line:#2a3b2f; --text:#e9f2ec; --dim:#8ba597; --accent:#52d17c; --bad:#ff6b6b; --good:#5fd38d; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui,sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 20px 16px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 15px; margin: 0 0 12px; color: var(--accent); text-transform: uppercase; letter-spacing: .06em; }
+  .sub { color: var(--dim); margin-bottom: 18px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  label { display:block; font-size: 13px; color: var(--dim); margin: 10px 0 4px; }
+  input[type=text], input[type=password], input[type=number], select, textarea {
+    width:100%; background:#0e1611; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:8px 10px; font:inherit; }
+  textarea { min-height: 70px; resize: vertical; }
+  .row { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; } .row > * { flex:1; min-width: 160px; }
+  .row > .fit { flex: 0 0 auto; min-width: 0; }
+  button { background:var(--accent); color:#06180f; border:0; border-radius:6px; padding:8px 14px; font:inherit; font-weight:600; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
+  .pill { display:inline-block; padding:2px 10px; border-radius:99px; font-size:12px; background:#0e1611; border:1px solid var(--line); }
+  .ok { color: var(--good); } .err { color: var(--bad); }
+  #log { height: 220px; overflow-y:auto; background:#0e1611; border:1px solid var(--line); border-radius:6px; padding:8px 10px; font-size:14px; }
+  #log div { margin: 3px 0; } .k-frog{color:#ffd479} .k-error{color:var(--bad)} .k-info{color:var(--dim)}
+  .switch { display:flex; align-items:center; gap:8px; margin-top:12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🐸 BrainFrog Voice <span id="status" class="pill">…</span></h1>
+  <div class="sub">BrainFrog reads your live Twitch chat out loud, in a friendly voice of your choosing. Runs as a plain background app -- no VR session, no game hook, so it keeps talking no matter what you're playing. Keys are saved on this PC only.</div>
+
+  <section>
+    <h2>Voice (Inworld)</h2>
+    <label>API key <span id="hasInworld" class="pill"></span></label>
+    <input type="password" id="inworld_api_key" placeholder="paste to set or replace" autocomplete="off">
+    <div class="row">
+      <div><label>Voice</label><select id="voiceSelect"><option value="">(load voices)</option></select></div>
+      <div><label>…or type a Voice ID</label><input type="text" id="inworld_voice_id"></div>
+    </div>
+    <div class="row">
+      <div><label>TTS model</label><input type="text" id="inworld_model_id"></div>
+      <div><label>Speaking rate (0.5–2)</label><input type="number" id="speaking_rate" step="0.05" min="0.5" max="2"></div>
+      <div><label>Volume (0–3)</label><input type="number" id="volume" step="0.1" min="0" max="3"></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <div class="fit"><button class="ghost" id="loadVoices">Load my voices</button></div>
+      <div class="fit"><button class="ghost" id="preview">Preview voice</button></div>
+      <div id="voiceMsg" class="sub" style="margin:0;align-self:center"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Brain (OpenRouter)</h2>
+    <label>API key <span id="hasOpenrouter" class="pill"></span></label>
+    <input type="password" id="openrouter_api_key" placeholder="paste to set or replace" autocomplete="off">
+    <label>Model slug</label>
+    <input type="text" id="openrouter_model">
+    <label>Extra personality notes (optional)</label>
+    <textarea id="persona_extra" placeholder="e.g. Keep remarks very short. Mention my channel name sometimes."></textarea>
+  </section>
+
+  <section>
+    <h2>Twitch chat</h2>
+    <div class="switch" style="margin-top:0"><input type="checkbox" id="twitch_enabled"><span>Let BrainFrog read my live chat</span></div>
+    <div class="sub" style="margin:6px 0 0">Read-only and anonymous: no login or token. BrainFrog reads new messages out loud automatically as they come in. Messages that moderators delete are removed, so he can't read them.</div>
+    <div class="row">
+      <div><label>Your channel name</label><input type="text" id="twitch_channel" placeholder="for example brainfrogvr"></div>
+      <div><label>Most messages read in one go</label><input type="number" id="max_batch" min="1" max="10"></div>
+      <div><label>Minimum seconds between readings</label><input type="number" id="min_gap_s" min="2" max="300"></div>
+    </div>
+    <div class="switch"><input type="checkbox" id="twitch_filter_slurs"><span>Skip any message or username containing a slur (recommended). Handles symbols, spacing and look-alike letters.</span></div>
+    <label>Ignore these users (bots)</label>
+    <input type="text" id="twitch_ignore_users">
+    <label>Never read messages containing these words (comma separated)</label>
+    <input type="text" id="twitch_blocked_words" placeholder="optional">
+    <div class="row" style="margin-top:12px">
+      <div class="fit"><button class="ghost" id="chatTest">Read chat now</button></div>
+      <div id="chatMsg" class="sub" style="margin:0;align-self:center"></div>
+    </div>
+    <label>Latest chat messages</label>
+    <div id="chatList" style="background:#0e1611;border:1px solid var(--line);border-radius:6px;padding:8px 10px;min-height:44px;font-size:14px"></div>
+  </section>
+
+  <section>
+    <h2>Activity</h2>
+    <div id="log"></div>
+  </section>
+
+  <button id="save">Save settings</button> <span id="saveMsg" class="sub"></span>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const FIELDS = ['twitch_channel','max_batch','min_gap_s','twitch_ignore_users','twitch_blocked_words','inworld_voice_id','inworld_model_id','speaking_rate','volume','openrouter_model','persona_extra'];
+const SECRETS = ['inworld_api_key','openrouter_api_key'];
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  return r.json();
+}
+
+async function loadConfig() {
+  const c = await api('/api/config');
+  FIELDS.forEach(f => $(f).value = c[f]);
+  $('twitch_enabled').checked = c.twitch_enabled;
+  $('twitch_filter_slurs').checked = c.twitch_filter_slurs;
+  $('hasInworld').textContent = c.has_inworld_api_key ? 'saved' : 'not set';
+  $('hasInworld').className = 'pill ' + (c.has_inworld_api_key ? 'ok' : 'err');
+  $('hasOpenrouter').textContent = c.has_openrouter_api_key ? 'saved' : 'not set';
+  $('hasOpenrouter').className = 'pill ' + (c.has_openrouter_api_key ? 'ok' : 'err');
+}
+
+async function save() {
+  const body = {twitch_enabled: $('twitch_enabled').checked, twitch_filter_slurs: $('twitch_filter_slurs').checked};
+  FIELDS.forEach(f => body[f] = $(f).value);
+  SECRETS.forEach(f => { body[f] = $(f).value.trim(); });
+  await api('/api/config', body);
+  SECRETS.forEach(f => $(f).value = '');
+  $('saveMsg').textContent = 'Saved';
+  setTimeout(() => $('saveMsg').textContent = '', 2000);
+  loadConfig();
+}
+
+async function loadVoices() {
+  $('voiceMsg').textContent = 'Loading…';
+  await save();
+  const r = await api('/api/voices');
+  const sel = $('voiceSelect');
+  if (r.error) { $('voiceMsg').textContent = r.error + ' — you can still type a Voice ID.'; $('voiceMsg').className = 'sub err'; return; }
+  sel.innerHTML = '<option value="">(choose)</option>' + r.voices.map(v =>
+    `<option value="${v.id}">${v.name}${v.description ? ' — ' + v.description : ''}</option>`).join('');
+  sel.value = $('inworld_voice_id').value;
+  $('voiceMsg').textContent = r.voices.length + ' voices'; $('voiceMsg').className = 'sub ok';
+}
+
+$('voiceSelect').onchange = e => { if (e.target.value) $('inworld_voice_id').value = e.target.value; };
+$('loadVoices').onclick = loadVoices;
+$('save').onclick = save;
+$('twitch_enabled').onchange = save;
+$('chatTest').onclick = async () => { await save(); api('/api/read_now'); };
+$('preview').onclick = async () => { await save(); api('/api/preview', {voice_id: $('inworld_voice_id').value}); };
+
+async function poll() {
+  try {
+    const s = await api('/api/status');
+    $('status').textContent = s.status;
+    const log = $('log'), atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+    log.innerHTML = s.log.map(l => `<div class="k-${l.kind}"><b>${{frog:'BrainFrog',error:'Error',info:'·'}[l.kind]||l.kind}:</b> ${l.text.replace(/</g,'&lt;')}</div>`).join('');
+    if (atBottom) log.scrollTop = log.scrollHeight;
+  } catch (e) { $('status').textContent = 'offline'; }
+}
+async function pollChat() {
+  try {
+    const c = await api('/api/chat');
+    const label = {off: 'off', connecting: 'connecting...', connected: `connected to #${c.channel} (${c.buffered} messages kept, ${c.filtered} skipped by the filters)`,
+                   error: `can't connect: ${c.error}`}[c.state] || c.state;
+    $('chatMsg').textContent = label;
+    $('chatMsg').className = 'sub ' + (c.state === 'connected' ? 'ok' : c.state === 'error' ? 'err' : '');
+    $('chatList').replaceChildren(...(c.messages.length ? c.messages : [{name: '', text: c.state === 'connected' ? '(nothing yet)' : ''}]).map(m => {
+      const d = document.createElement('div');
+      d.textContent = m.name ? `${m.name}: ${m.text}` : m.text;
+      return d;
+    }));
+  } catch (e) { /* the app is closed */ }
+}
+setInterval(pollChat, 2000); pollChat();
+loadConfig(); poll(); setInterval(poll, 800);
+</script>
+</body>
+</html>
