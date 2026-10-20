@@ -150,6 +150,17 @@ class ChatPrompt(unittest.TestCase):
         self.assertNotIn("skipped", twitch.chat_prompt(messages, skipped=0))
 
 
+class SpokenChatRequest(unittest.TestCase):
+    def test_recognizes_natural_phrasings(self):
+        for text in ("what's chat saying", "read me the chat", "anything new in chat", "what is twitch chat up to",
+                     "check chat for me", "what are my viewers saying", "read the comments"):
+            self.assertTrue(twitch.sounds_like_chat_request(text), text)
+
+    def test_ordinary_speech_is_not_a_chat_request(self):
+        for text in ("what is our objective", "how are you doing", "nice shot", "let's go", "good morning"):
+            self.assertFalse(twitch.sounds_like_chat_request(text), text)
+
+
 class Connection(unittest.TestCase):
     def test_connects_anonymously_joins_reads_and_answers_ping(self):
         fake = FakeTwitch([

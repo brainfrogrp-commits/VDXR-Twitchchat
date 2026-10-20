@@ -11,9 +11,12 @@ SteamVR today.
 ## How it works
 `Twitch chat (anonymous, read-only) -> OpenRouter LLM (BrainFrog persona) -> Inworld TTS -> your speakers`
 
-New chat messages are batched and read aloud automatically every so often (configurable).
-There's no mic, no wake word, no push-to-talk: BrainFrog doesn't listen for anything, he
-just reads what shows up in chat.
+By default BrainFrog stays quiet until you ask: say his wake word (e.g. "BrainFrog") or
+just ask out loud "what's chat saying?" and he reads the last few messages. This runs
+through a small local speech-to-text model (faster-whisper) -- nothing audio-related
+leaves your PC. You can also turn on automatic reading of every new message if you'd
+rather not ask each time, though that can talk over your game at a bad moment, which is
+why it's off by default.
 
 ## Run (Windows)
 1. Install Python 3.10+.
@@ -41,7 +44,8 @@ repo. The server only listens on localhost.
 |---|---|
 | Voice (Inworld) | API key, which voice BrainFrog speaks with, speaking rate, volume. **Preview voice** plays a test line with the current settings. |
 | Brain (OpenRouter) | API key, model, and an optional free-text box for extra personality notes (e.g. "mention my channel name sometimes"). |
-| Twitch chat | Enable/disable, channel name, how many messages get read per batch, minimum seconds between automatic readings, the bot-ignore list, a custom blocked-words list, and the slur filter toggle. **Read chat now** forces an immediate reading. |
+| Twitch chat | Enable/disable, channel name, how many messages get read per batch, the bot-ignore list, a custom blocked-words list, the slur filter toggle, and an opt-in "also read automatically whenever new messages arrive" switch (off by default). **Read chat now** forces an immediate reading. |
+| Wake word | Enable/disable the mic listener, the wake word itself (default "brainfrog"), the local speech-recognition model size, mic sensitivity, and a live mic-level meter. |
 
 ## Persona
 BrainFrog's personality lives in `app/frog_voice/persona.py`: warm, upbeat, a little
@@ -74,11 +78,12 @@ app/
     twitch.py            Anonymous Twitch IRC client, moderation-aware buffer, cursor
     slurs.py             Slur/evasion detection used to filter chat before it's read
     engine.py            Watches chat, batches new messages, drives the LLM + TTS
+    wake.py              Mic listener: VAD segmentation + wake-word/chat-request detection
     llm.py               OpenRouter chat completions (streaming)
     inworld.py            Inworld text-to-speech
     pipeline.py           Streams LLM sentences into TTS with no gaps between them
     streaming.py          Turns a token stream into whole sentences
-    speech_io.py          MP3 playback
+    speech_io.py          MP3 playback + local speech-to-text (faster-whisper)
     lifecycle.py          Clean shutdown when the console window closes
   web/index.html          Settings page
   tests/                  Unit tests (no network, no real audio)

@@ -304,6 +304,18 @@ class TwitchChat:
 
 chat = TwitchChat()
 
+_CHAT_WORDS = re.compile(r"\b(chat|comments?|viewers?|twitch)\b")
+_ASK_WORDS = re.compile(
+    r"\b(read|say|saying|says|said|tell|what|whats|what s|check|anything|anyone|anybody|latest|last|recent|new|show|hear|going on)\b")
+
+
+def sounds_like_chat_request(text: str) -> bool:
+    """True if speech sounds like someone asking what chat is saying, e.g.
+    "what's chat saying", "read me the comments", "anything new in chat"."""
+    t = re.sub(r"[^a-z0-9 ]", " ", (text or "").lower().replace("'", " "))
+    t = re.sub(r"\s+", " ", t)
+    return bool(_CHAT_WORDS.search(t) and _ASK_WORDS.search(t))
+
 
 # ------------------------------------------------------------- reading it aloud
 

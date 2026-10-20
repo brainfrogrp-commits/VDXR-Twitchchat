@@ -26,8 +26,14 @@ DEFAULTS = {
     "twitch_ignore_users": "nightbot, streamelements, moobot, fossabot, streamlabs, wizebot, soundalerts",
     "twitch_blocked_words": "",
     "twitch_filter_slurs": True,
-    "max_batch": 5,  # most messages read in one go
+    "max_batch": 4,  # most messages read in one go
     "min_gap_s": 12,  # minimum seconds between automatic readings
+    "auto_read_enabled": False,  # read every new message as it arrives (can interrupt a game; off by default)
+    "wake_word_enabled": True,  # listen on the mic for the wake word / "what's chat saying"
+    "wake_word": "brainfrog",
+    "whisper_model_size": "base.en",
+    "vad_threshold": 0.02,
+    "vad_silence_s": 0.8,
 }
 
 _lock = threading.Lock()

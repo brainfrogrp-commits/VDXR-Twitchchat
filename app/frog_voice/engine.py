@@ -33,6 +33,7 @@ class Engine:
         self._greeted_channel = None
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self.last_done = 0.0  # monotonic time the last reading finished (lets a mic listener avoid our own voice)
 
     # --- logging for the web page ---
     def note(self, kind: str, text: str) -> None:
@@ -70,6 +71,8 @@ class Engine:
             self._greeted_channel = st["channel"]
             self._cursor = twitch.chat.latest_seq()  # don't read the backlog, only what arrives from now on
             self._in_thread(self._say_phrase, "greeting")
+            return
+        if not cfg["auto_read_enabled"]:
             return
         if self._busy.locked():
             return
@@ -153,6 +156,9 @@ class Engine:
         self._in_thread(self._run_guarded, self._read_batch, messages, 0)
 
     # --- plumbing ---
+    def is_busy(self) -> bool:
+        return self._busy.locked()
+
     def _in_thread(self, fn, *args) -> None:
         threading.Thread(target=fn, args=args, daemon=True).start()
 
@@ -166,6 +172,7 @@ class Engine:
             self.note("error", str(e))
         finally:
             self.status = "idle"
+            self.last_done = time.monotonic()
             self._busy.release()
 
     def _say_fixed(self, cfg: dict, text: str) -> None:

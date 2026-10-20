@@ -9,6 +9,7 @@ from flask import Flask, jsonify, request, send_from_directory
 
 from frog_voice import config, inworld, lifecycle, twitch
 from frog_voice.engine import engine
+from frog_voice.wake import WakeListener
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 PORT = 5858
@@ -17,6 +18,7 @@ _ALLOWED_ORIGINS = {f"http://{host}" for host in _ALLOWED_HOSTS}
 
 _refused = set()
 app = Flask(__name__, static_folder="web", static_url_path="")
+listener = WakeListener(engine)
 
 
 @app.before_request
@@ -46,6 +48,7 @@ def get_config():
 def set_config():
     cfg = config.update(request.get_json(force=True) or {})
     twitch.chat.apply(cfg)
+    listener.apply(cfg)
     return jsonify(config.public_view(cfg))
 
 
@@ -91,12 +94,27 @@ def chat_status():
 
 @app.get("/api/status")
 def status():
-    return jsonify(status=engine.status, log=list(engine.log))
+    return jsonify(
+        status=engine.status,
+        log=list(engine.log),
+        listening=listener.running,
+        listen_error=listener.error,
+        mic_level=round(listener.level, 4),
+    )
 
 
 def warm_up() -> None:
     """Do the slow one-time work now instead of on the first message."""
     cfg = config.load()
+    if cfg["wake_word_enabled"]:
+        try:
+            engine.note("info", f"Loading the speech model ({cfg['whisper_model_size']})...")
+            from frog_voice import speech_io
+
+            speech_io.preload(cfg["whisper_model_size"])
+            engine.note("info", "Speech model ready.")
+        except Exception as e:
+            engine.note("error", f"Couldn't load the speech model: {e}")
     try:  # the fixed lines, ready to play instantly
         engine.prepare_phrases()
     except Exception as e:
@@ -113,6 +131,11 @@ def warm_up() -> None:
 def shutdown() -> None:
     engine.stop()
     twitch.chat.stop()
+    if listener.running:
+        try:
+            listener.stop()
+        except Exception:
+            pass
 
 
 def already_running(port: int) -> bool:
@@ -133,6 +156,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
     twitch.chat.apply(config.load())
     engine.start()
+    listener.apply(config.load())
     lifecycle.install(shutdown)
     threading.Thread(target=warm_up, daemon=True).start()
     print(f"BrainFrog Voice: open http://127.0.0.1:{PORT}")

@@ -65,23 +65,46 @@
   <section>
     <h2>Twitch chat</h2>
     <div class="switch" style="margin-top:0"><input type="checkbox" id="twitch_enabled"><span>Let BrainFrog read my live chat</span></div>
-    <div class="sub" style="margin:6px 0 0">Read-only and anonymous: no login or token. BrainFrog reads new messages out loud automatically as they come in. Messages that moderators delete are removed, so he can't read them.</div>
+    <div class="sub" style="margin:6px 0 0">Read-only and anonymous: no login or token. Messages that moderators delete are removed, so he can't read them.</div>
     <div class="row">
       <div><label>Your channel name</label><input type="text" id="twitch_channel" placeholder="for example brainfrogvr"></div>
       <div><label>Most messages read in one go</label><input type="number" id="max_batch" min="1" max="10"></div>
-      <div><label>Minimum seconds between readings</label><input type="number" id="min_gap_s" min="2" max="300"></div>
     </div>
     <div class="switch"><input type="checkbox" id="twitch_filter_slurs"><span>Skip any message or username containing a slur (recommended). Handles symbols, spacing and look-alike letters.</span></div>
     <label>Ignore these users (bots)</label>
     <input type="text" id="twitch_ignore_users">
     <label>Never read messages containing these words (comma separated)</label>
     <input type="text" id="twitch_blocked_words" placeholder="optional">
+    <div class="switch"><input type="checkbox" id="auto_read_enabled"><span>Also read automatically whenever new messages arrive</span></div>
+    <div class="sub" style="margin:6px 0 0">Off by default: reading on every single new message can talk over your game at a bad moment. With this off, BrainFrog only reads when you say the wake word below (or ask "what's chat saying").</div>
+    <label>Minimum seconds between automatic readings (only used if the above is on)</label>
+    <input type="number" id="min_gap_s" min="2" max="300">
     <div class="row" style="margin-top:12px">
       <div class="fit"><button class="ghost" id="chatTest">Read chat now</button></div>
       <div id="chatMsg" class="sub" style="margin:0;align-self:center"></div>
     </div>
     <label>Latest chat messages</label>
     <div id="chatList" style="background:#0e1611;border:1px solid var(--line);border-radius:6px;padding:8px 10px;min-height:44px;font-size:14px"></div>
+  </section>
+
+  <section>
+    <h2>Wake word</h2>
+    <div class="switch" style="margin-top:0"><input type="checkbox" id="wake_word_enabled"><span>Listen on the mic: say the wake word, or just ask what chat is saying, to hear the latest messages</span></div>
+    <div class="sub" style="margin:6px 0 0">Runs locally on this PC (no audio leaves your machine). Try saying "<i>brainfrog</i>" or "<i>what's chat saying?</i>" out loud once it says it's listening below.</div>
+    <div class="row">
+      <div><label>Wake word</label><input type="text" id="wake_word" placeholder="brainfrog"></div>
+      <div><label>Speech recognition model (runs on this PC)</label>
+        <select id="whisper_model_size"><option>tiny.en</option><option>base.en</option><option>small.en</option><option>tiny</option><option>base</option><option>small</option><option>medium</option></select></div>
+    </div>
+    <div class="row">
+      <div><label>Sensitivity: speech counts above this level (lower = more sensitive)</label><input type="number" id="vad_threshold" step="0.005" min="0.002" max="0.3"></div>
+      <div><label>Pause that ends an utterance (seconds)</label><input type="number" id="vad_silence_s" step="0.1" min="0.3" max="3"></div>
+    </div>
+    <label>Mic level <span id="listenMsg" class="sub"></span></label>
+    <div style="position:relative;height:12px;background:#0e1611;border:1px solid var(--line);border-radius:6px;overflow:hidden">
+      <div id="meter" style="height:100%;width:0;background:var(--accent)"></div>
+      <div id="meterMark" style="position:absolute;top:0;bottom:0;width:2px;background:var(--bad)"></div>
+    </div>
   </section>
 
   <section>
@@ -93,8 +116,9 @@
 </main>
 <script>
 const $ = id => document.getElementById(id);
-const FIELDS = ['twitch_channel','max_batch','min_gap_s','twitch_ignore_users','twitch_blocked_words','inworld_voice_id','inworld_model_id','speaking_rate','volume','openrouter_model','persona_extra'];
+const FIELDS = ['twitch_channel','max_batch','min_gap_s','twitch_ignore_users','twitch_blocked_words','inworld_voice_id','inworld_model_id','speaking_rate','volume','openrouter_model','persona_extra','wake_word','whisper_model_size','vad_threshold','vad_silence_s'];
 const SECRETS = ['inworld_api_key','openrouter_api_key'];
+const SWITCHES = ['twitch_enabled','twitch_filter_slurs','auto_read_enabled','wake_word_enabled'];
 
 async function api(path, body) {
   const r = await fetch(path, body === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
@@ -104,8 +128,7 @@ async function api(path, body) {
 async function loadConfig() {
   const c = await api('/api/config');
   FIELDS.forEach(f => $(f).value = c[f]);
-  $('twitch_enabled').checked = c.twitch_enabled;
-  $('twitch_filter_slurs').checked = c.twitch_filter_slurs;
+  SWITCHES.forEach(f => $(f).checked = c[f]);
   $('hasInworld').textContent = c.has_inworld_api_key ? 'saved' : 'not set';
   $('hasInworld').className = 'pill ' + (c.has_inworld_api_key ? 'ok' : 'err');
   $('hasOpenrouter').textContent = c.has_openrouter_api_key ? 'saved' : 'not set';
@@ -113,7 +136,8 @@ async function loadConfig() {
 }
 
 async function save() {
-  const body = {twitch_enabled: $('twitch_enabled').checked, twitch_filter_slurs: $('twitch_filter_slurs').checked};
+  const body = {};
+  SWITCHES.forEach(f => body[f] = $(f).checked);
   FIELDS.forEach(f => body[f] = $(f).value);
   SECRETS.forEach(f => { body[f] = $(f).value.trim(); });
   await api('/api/config', body);
@@ -139,6 +163,8 @@ $('voiceSelect').onchange = e => { if (e.target.value) $('inworld_voice_id').val
 $('loadVoices').onclick = loadVoices;
 $('save').onclick = save;
 $('twitch_enabled').onchange = save;
+$('wake_word_enabled').onchange = save;
+$('auto_read_enabled').onchange = save;
 $('chatTest').onclick = async () => { await save(); api('/api/read_now'); };
 $('preview').onclick = async () => { await save(); api('/api/preview', {voice_id: $('inworld_voice_id').value}); };
 
@@ -149,6 +175,11 @@ async function poll() {
     const log = $('log'), atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
     log.innerHTML = s.log.map(l => `<div class="k-${l.kind}"><b>${{frog:'BrainFrog',error:'Error',info:'·'}[l.kind]||l.kind}:</b> ${l.text.replace(/</g,'&lt;')}</div>`).join('');
     if (atBottom) log.scrollTop = log.scrollHeight;
+    const thr = parseFloat($('vad_threshold').value) || 0.02, max = 0.2;
+    $('meter').style.width = Math.min(100, s.mic_level / max * 100) + '%';
+    $('meterMark').style.left = Math.min(100, thr / max * 100) + '%';
+    $('listenMsg').textContent = s.listen_error || (s.listening ? '(listening; red line = sensitivity)' : '(wake word is off)');
+    $('listenMsg').className = 'sub ' + (s.listen_error ? 'err' : '');
   } catch (e) { $('status').textContent = 'offline'; }
 }
 async function pollChat() {

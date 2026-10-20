@@ -93,6 +93,13 @@ class EngineCase(unittest.TestCase):
         self.assertNotIn("msg 4", user)
         self.assertIn("4 older messages skipped", user)
 
+    def test_is_busy_and_last_done_track_a_run_guarded_call(self):
+        self.assertFalse(self.engine.is_busy())
+        self.assertEqual(self.engine.last_done, 0.0)
+        self.engine._run_guarded(lambda: None)
+        self.assertFalse(self.engine.is_busy())
+        self.assertGreater(self.engine.last_done, 0.0)
+
 
 class TickCursor(unittest.TestCase):
     """The background loop only reads what's new, and only once per gap."""
@@ -104,7 +111,7 @@ class TickCursor(unittest.TestCase):
         eng._greeted_channel = "brainfrog"
         chat.messages.append(message(2, "b", "brand new"))
         read = []
-        with mock.patch.object(engine_mod.config, "load", lambda: dict(CFG, min_gap_s=0)), \
+        with mock.patch.object(engine_mod.config, "load", lambda: dict(CFG, auto_read_enabled=True, min_gap_s=0)), \
              mock.patch.object(engine_mod.twitch, "chat", chat), \
              mock.patch.object(eng, "_in_thread", lambda fn, *a: read.append(a)):
             eng._tick()
@@ -112,13 +119,25 @@ class TickCursor(unittest.TestCase):
         self.assertEqual([m.text for m in read[0][1]], ["brand new"])
         self.assertEqual(eng._cursor, 2)
 
+    def test_tick_does_nothing_when_auto_read_is_off(self):
+        eng = engine_mod.Engine()
+        chat = FakeChat(messages=[message(1, "a", "hi"), message(2, "b", "new")])
+        eng._cursor = 1
+        eng._greeted_channel = "brainfrog"
+        with mock.patch.object(engine_mod.config, "load", lambda: dict(CFG, auto_read_enabled=False)), \
+             mock.patch.object(engine_mod.twitch, "chat", chat), \
+             mock.patch.object(eng, "_in_thread") as spawn:
+            eng._tick()
+        spawn.assert_not_called()
+
     def test_tick_does_nothing_before_the_minimum_gap_has_passed(self):
         eng = engine_mod.Engine()
         chat = FakeChat(messages=[message(1, "a", "hi")])
         eng._cursor = 0
         eng._greeted_channel = "brainfrog"
         eng._last_read_t = time.monotonic()
-        with mock.patch.object(engine_mod.config, "load", lambda: dict(CFG, min_gap_s=999)), \
+        with mock.patch.object(engine_mod.config, "load",
+                                lambda: dict(CFG, auto_read_enabled=True, min_gap_s=999)), \
              mock.patch.object(engine_mod.twitch, "chat", chat), \
              mock.patch.object(eng, "_in_thread") as spawn:
             eng._tick()
