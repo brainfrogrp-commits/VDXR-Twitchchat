@@ -1,11 +1,15 @@
 """Hands-free wake-word listening: detect speech on the mic, transcribe it
-locally, and if it mentions the wake word or just sounds like someone asking
-what chat is saying, read the latest chat messages aloud. There's no open
-conversation to manage here (unlike a Q&A companion) -- each utterance is
-either a trigger or it isn't.
+locally, and decide what to do with it:
+  - sounds like asking what chat is saying (with or without the wake word)
+    -> read the latest chat messages aloud, strictly, no commentary.
+  - mentions the wake word otherwise -> whatever was said after the wake
+    word (or "hello?" if nothing else was said) becomes an actual question/
+    chat turn, answered in character.
+  - neither -> ignored.
 
-The trigger logic (mentions_wake_word, is_noise, Segmenter) is pure and has
-no audio or network dependency, so it can be tested without a microphone."""
+The trigger logic (extract_after_wake_word, is_noise, Segmenter) is pure
+and has no audio or network dependency, so it can be tested without a
+microphone."""
 
 import collections
 import re
@@ -35,13 +39,25 @@ def is_noise(text: str) -> bool:
     return not cleaned or cleaned in NOISE
 
 
-def mentions_wake_word(text: str, wake_word: str) -> bool:
-    """Lenient match: punctuation and spaces are ignored on both sides, so a
-    wake word of "brainfrog" still matches "brain frog" (speech recognition
-    sometimes splits one word into two)."""
-    squashed = re.sub(r"[^a-z0-9]", "", (text or "").lower())
+def extract_after_wake_word(text: str, wake_word: str) -> Optional[str]:
+    """If the wake word appears in the text, everything spoken after it
+    (lowercased, so "" if the wake word was all that was said); else None.
+    Punctuation and spaces are ignored on both sides, so a wake word of
+    "brainfrog" still matches "brain frog" (speech recognition sometimes
+    splits one word into two)."""
     target = re.sub(r"[^a-z0-9]", "", (wake_word or "").lower())
-    return bool(target) and target in squashed
+    if not target:
+        return None
+    words = normalize(text).split()
+    for i in range(len(words)):
+        acc = ""
+        for j in range(i, len(words)):
+            acc += words[j]
+            if acc == target:
+                return " ".join(words[j + 1:])
+            if len(acc) > len(target):
+                break
+    return None
 
 
 class Segmenter:
@@ -179,8 +195,12 @@ class WakeListener:
         text = speech_io.transcribe(audio, cfg["whisper_model_size"])
         if not text or is_noise(text):
             return
-        if mentions_wake_word(text, cfg["wake_word"]) or twitch.sounds_like_chat_request(text):
+        if twitch.sounds_like_chat_request(text):
             self.engine.note("info", f'Heard "{text}" -- reading chat.')
             self.engine.read_now()
-        else:
+            return
+        rest = extract_after_wake_word(text, cfg["wake_word"])
+        if rest is None:
             self.engine.note("info", f'Heard "{text}" (not a trigger).')
+            return
+        self.engine.ask(rest or "Hello?")

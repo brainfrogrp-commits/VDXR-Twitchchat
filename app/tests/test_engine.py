@@ -100,6 +100,43 @@ class EngineCase(unittest.TestCase):
         self.assertFalse(self.engine.is_busy())
         self.assertGreater(self.engine.last_done, 0.0)
 
+    def test_read_now_does_not_repeat_a_message_already_read(self):
+        # dude1's message was already read last time (cursor at its seq) -- asking
+        # again with nothing new must not have BrainFrog say it a second time.
+        chat = FakeChat(messages=[message(1, "dude1", "say fruit")])
+        self.engine._cursor = 1
+        with mock.patch.object(engine_mod.twitch, "chat", chat):
+            self.engine.read_now()
+        self.assertEqual(self.prompts, [], "no new messages since last read, so the model must not be asked")
+        self.assertEqual(self.spoken, [engine_mod.PHRASES["chat_quiet"][0]])
+
+    def test_read_now_advances_the_cursor_past_what_it_just_read(self):
+        chat = FakeChat(messages=[message(1, "dude1", "say fruit")])
+        with mock.patch.object(engine_mod.twitch, "chat", chat):
+            self.engine.read_now()
+        self.assertEqual(self.engine._cursor, 1)
+
+    def test_ask_uses_the_talk_persona_and_remembers_history(self):
+        chat = FakeChat()
+        with mock.patch.object(engine_mod.twitch, "chat", chat):
+            self.engine.respond("how's it going")
+            self.engine.respond("tell me more")
+        self.assertEqual(len(self.prompts), 2)
+        system = self.prompts[0][0]["content"]
+        self.assertIn("Banter and light jokes are welcome", system)
+        self.assertNotIn("VIEWER MESSAGES", system)
+        second_messages = self.prompts[1]
+        self.assertIn("how's it going", [m["content"] for m in second_messages])
+        self.assertIn("Chat says hi. Nice to hear from you.", [m["content"] for m in second_messages])
+
+    def test_ask_logs_the_question_and_spawns_a_reply(self):
+        spawned = []
+        with mock.patch.object(self.engine, "_in_thread", lambda fn, *a: spawned.append((fn, a))):
+            self.engine.ask("what's up")
+        self.assertEqual(self.engine.log[-1]["kind"], "you")
+        self.assertEqual(self.engine.log[-1]["text"], "what's up")
+        self.assertEqual(spawned, [(self.engine._run_guarded, (self.engine.respond, "what's up"))])
+
 
 class TickCursor(unittest.TestCase):
     """The background loop only reads what's new, and only once per gap."""

@@ -23,14 +23,14 @@
   .pill { display:inline-block; padding:2px 10px; border-radius:99px; font-size:12px; background:#0e1611; border:1px solid var(--line); }
   .ok { color: var(--good); } .err { color: var(--bad); }
   #log { height: 220px; overflow-y:auto; background:#0e1611; border:1px solid var(--line); border-radius:6px; padding:8px 10px; font-size:14px; }
-  #log div { margin: 3px 0; } .k-frog{color:#ffd479} .k-error{color:var(--bad)} .k-info{color:var(--dim)}
+  #log div { margin: 3px 0; } .k-frog{color:#ffd479} .k-you{color:#9ad1ff} .k-error{color:var(--bad)} .k-info{color:var(--dim)}
   .switch { display:flex; align-items:center; gap:8px; margin-top:12px; }
 </style>
 </head>
 <body>
 <main>
   <h1>🐸 BrainFrog Voice <span id="status" class="pill">…</span></h1>
-  <div class="sub">BrainFrog reads your live Twitch chat out loud, in a friendly voice of your choosing. Runs as a plain background app -- no VR session, no game hook, so it keeps talking no matter what you're playing. Keys are saved on this PC only.</div>
+  <div class="sub">BrainFrog reads your live Twitch chat out loud on request -- and can just chat with you too -- in a friendly voice of your choosing. Runs as a plain background app -- no VR session, no game hook, so it keeps talking no matter what you're playing. Keys are saved on this PC only.</div>
 
   <section>
     <h2>Voice (Inworld)</h2>
@@ -89,8 +89,8 @@
 
   <section>
     <h2>Wake word</h2>
-    <div class="switch" style="margin-top:0"><input type="checkbox" id="wake_word_enabled"><span>Listen on the mic: say the wake word, or just ask what chat is saying, to hear the latest messages</span></div>
-    <div class="sub" style="margin:6px 0 0">Runs locally on this PC (no audio leaves your machine). Try saying "<i>brainfrog</i>" or "<i>what's chat saying?</i>" out loud once it says it's listening below.</div>
+    <div class="switch" style="margin-top:0"><input type="checkbox" id="wake_word_enabled"><span>Listen on the mic</span></div>
+    <div class="sub" style="margin:6px 0 0">Runs locally on this PC (no audio leaves your machine). Three things it understands: ask what chat is saying (reads what's new, nothing repeated) &mdash; say the wake word plus a question (an actual answer, in character) &mdash; or just say the wake word to start chatting. Try saying "<i>brainfrog</i>", "<i>what's chat saying?</i>", or "<i>brainfrog, how's it going?</i>" once it says it's listening below.</div>
     <div class="row">
       <div><label>Wake word</label><input type="text" id="wake_word" placeholder="brainfrog"></div>
       <div><label>Speech recognition model (runs on this PC)</label>
@@ -104,6 +104,11 @@
     <div style="position:relative;height:12px;background:#0e1611;border:1px solid var(--line);border-radius:6px;overflow:hidden">
       <div id="meter" style="height:100%;width:0;background:var(--accent)"></div>
       <div id="meterMark" style="position:absolute;top:0;bottom:0;width:2px;background:var(--bad)"></div>
+    </div>
+    <label>Try without a mic</label>
+    <div class="row">
+      <input type="text" id="askText" placeholder="e.g. how's it going?">
+      <div class="fit"><button class="ghost" id="askBtn">Ask</button></div>
     </div>
   </section>
 
@@ -167,13 +172,15 @@ $('wake_word_enabled').onchange = save;
 $('auto_read_enabled').onchange = save;
 $('chatTest').onclick = async () => { await save(); api('/api/read_now'); };
 $('preview').onclick = async () => { await save(); api('/api/preview', {voice_id: $('inworld_voice_id').value}); };
+$('askBtn').onclick = async () => { const t = $('askText').value.trim(); if (t) { $('askText').value = ''; await save(); api('/api/ask', {text: t}); } };
+$('askText').onkeydown = e => { if (e.key === 'Enter') $('askBtn').click(); };
 
 async function poll() {
   try {
     const s = await api('/api/status');
     $('status').textContent = s.status;
     const log = $('log'), atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
-    log.innerHTML = s.log.map(l => `<div class="k-${l.kind}"><b>${{frog:'BrainFrog',error:'Error',info:'·'}[l.kind]||l.kind}:</b> ${l.text.replace(/</g,'&lt;')}</div>`).join('');
+    log.innerHTML = s.log.map(l => `<div class="k-${l.kind}"><b>${{frog:'BrainFrog',you:'You',error:'Error',info:'·'}[l.kind]||l.kind}:</b> ${l.text.replace(/</g,'&lt;')}</div>`).join('');
     if (atBottom) log.scrollTop = log.scrollHeight;
     const thr = parseFloat($('vad_threshold').value) || 0.02, max = 0.2;
     $('meter').style.width = Math.min(100, s.mic_level / max * 100) + '%';

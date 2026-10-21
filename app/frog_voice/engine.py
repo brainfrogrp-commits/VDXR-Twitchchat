@@ -1,6 +1,7 @@
-"""BrainFrog's engine: watches the Twitch chat buffer and, every so often,
-reads whatever's new aloud in character. No mic, no game, no conversation --
-just chat in, voice out."""
+"""BrainFrog's engine: watches the Twitch chat buffer and, on request, reads
+whatever's new aloud -- strictly the messages, no commentary mixed in. He can
+also just talk: a wake-word question or a bit of chat gets a real, in-character
+reply instead of a chat reading."""
 
 import collections
 import logging
@@ -31,6 +32,7 @@ class Engine:
         self._last_read_t = 0.0
         self._phrase_cache = {}
         self._greeted_channel = None
+        self.history = collections.deque(maxlen=6)  # recent (you, frog) turns, for conversational replies
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self.last_done = 0.0  # monotonic time the last reading finished (lets a mic listener avoid our own voice)
@@ -89,8 +91,13 @@ class Engine:
         self._in_thread(self._run_guarded, self._read_batch, batch, skipped)
 
     # --- speaking ---
-    def _system(self, cfg: dict) -> str:
-        return persona.build_system_prompt(cfg["persona_extra"])
+    def _system_chat(self, cfg: dict) -> str:
+        """The strict, no-commentary persona used only for reading chat messages aloud."""
+        return persona.build_system_prompt(cfg["persona_extra"], mode="chat")
+
+    def _system_talk(self, cfg: dict) -> str:
+        """The full personality, used for an actual conversation (wake word + a question or chit-chat)."""
+        return persona.build_system_prompt(cfg["persona_extra"], mode="talk")
 
     def speak(self, cfg: dict, text: str, voice_id: str = "") -> None:
         self.status = "speaking"
@@ -129,7 +136,7 @@ class Engine:
         prompt = twitch.chat_prompt(messages, skipped)
         reply, marks = self._stream_reply(
             cfg,
-            [{"role": "system", "content": self._system(cfg)}, {"role": "user", "content": prompt}],
+            [{"role": "system", "content": self._system_chat(cfg)}, {"role": "user", "content": prompt}],
             min(450, 70 * len(messages) + 90),
         )
         if reply:
@@ -137,9 +144,10 @@ class Engine:
         self._note_timing(marks)
 
     def read_now(self) -> None:
-        """Manual trigger from the settings page: read the latest messages right away.
-        The quick "nothing to read" replies are said directly (no API call involved);
-        only the actual LLM+TTS reading is handed off to a thread."""
+        """Triggered by the settings page, the wake word, or "what's chat saying": read
+        whatever's new since the last time anything was read -- never the same message
+        twice. The quick "nothing to read" replies are said directly (no API call
+        involved); only the actual LLM+TTS reading is handed off to a thread."""
         cfg = config.load()
         if not cfg["twitch_enabled"] or not cfg["twitch_channel"].strip():
             self._say_fixed(cfg, PHRASES["chat_off"][0])
@@ -147,13 +155,35 @@ class Engine:
         if twitch.chat.status()["state"] != "connected":
             self._say_fixed(cfg, PHRASES["chat_down"][0])
             return
-        messages = twitch.chat.recent(cfg["max_batch"])
+        messages, cursor = twitch.chat.since(self._cursor)
         if not messages:
             self._say_fixed(cfg, PHRASES["chat_quiet"][0])
             return
-        self._cursor = max(self._cursor, messages[-1].seq)
+        batch = messages[-cfg["max_batch"]:]
+        skipped = len(messages) - len(batch)
+        self._cursor = cursor
         self._last_read_t = time.monotonic()
-        self._in_thread(self._run_guarded, self._read_batch, messages, 0)
+        self._in_thread(self._run_guarded, self._read_batch, batch, skipped)
+
+    def respond(self, question: str) -> None:
+        """An actual conversational reply -- wake word plus a question, or just chit-chat.
+        Unlike reading chat, BrainFrog's full personality is free to banter here."""
+        cfg = config.load()
+        messages = [{"role": "system", "content": self._system_talk(cfg)}]
+        for you, frog in self.history:
+            messages += [{"role": "user", "content": you}, {"role": "assistant", "content": frog}]
+        messages.append({"role": "user", "content": question})
+        self.status = "thinking"
+        reply, marks = self._stream_reply(cfg, messages, 200)
+        if reply:
+            self.history.append((question, reply))
+            self.note("frog", reply)
+        self._note_timing(marks)
+
+    def ask(self, question: str) -> None:
+        """A question or bit of chat picked up by the wake-word listener."""
+        self.note("you", question)
+        self._in_thread(self._run_guarded, self.respond, question)
 
     # --- plumbing ---
     def is_busy(self) -> bool:

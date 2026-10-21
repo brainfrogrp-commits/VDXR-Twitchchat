@@ -11,12 +11,23 @@ SteamVR today.
 ## How it works
 `Twitch chat (anonymous, read-only) -> OpenRouter LLM (BrainFrog persona) -> Inworld TTS -> your speakers`
 
-By default BrainFrog stays quiet until you ask: say his wake word (e.g. "BrainFrog") or
-just ask out loud "what's chat saying?" and he reads the last few messages. This runs
-through a small local speech-to-text model (faster-whisper) -- nothing audio-related
-leaves your PC. You can also turn on automatic reading of every new message if you'd
-rather not ask each time, though that can talk over your game at a bad moment, which is
-why it's off by default.
+By default BrainFrog stays quiet until you ask. Three things the mic listens for:
+- **"What's chat saying?"** (with or without the wake word) -- reads whatever's new since
+  the last time you asked. Never repeats a message you've already heard: if nothing's
+  arrived since last time, he says so instead of reading the same thing again.
+- **Wake word + a question** ("BrainFrog, how's it going?") -- an actual answer, in
+  character, not a chat reading.
+- **Just the wake word** ("hey BrainFrog") -- starts a conversation; say whatever's on
+  your mind.
+
+While reading chat he sticks strictly to the messages -- no jokes or remarks mixed in, so
+it's never ambiguous whether something was from chat or from him. In conversation, his
+full personality is free to banter.
+
+All of this runs through a small local speech-to-text model (faster-whisper) -- nothing
+audio-related leaves your PC. You can also turn on automatic reading of every new message
+if you'd rather not ask each time, though that can talk over your game at a bad moment,
+which is why it's off by default.
 
 ## Run (Windows)
 1. Install Python 3.10+.
@@ -45,13 +56,14 @@ repo. The server only listens on localhost.
 | Voice (Inworld) | API key, which voice BrainFrog speaks with, speaking rate, volume. **Preview voice** plays a test line with the current settings. |
 | Brain (OpenRouter) | API key, model, and an optional free-text box for extra personality notes (e.g. "mention my channel name sometimes"). |
 | Twitch chat | Enable/disable, channel name, how many messages get read per batch, the bot-ignore list, a custom blocked-words list, the slur filter toggle, and an opt-in "also read automatically whenever new messages arrive" switch (off by default). **Read chat now** forces an immediate reading. |
-| Wake word | Enable/disable the mic listener, the wake word itself (default "brainfrog"), the local speech-recognition model size, mic sensitivity, and a live mic-level meter. |
+| Wake word | Enable/disable the mic listener, the wake word itself (default "brainfrog"), the local speech-recognition model size, mic sensitivity, a live mic-level meter, and an **Ask** box to try a question without a mic. |
 
 ## Persona
-BrainFrog's personality lives in `app/frog_voice/persona.py`: warm, upbeat, a little
-frog-themed phrasing used sparingly, never mean to viewers. Edit `CORE_PERSONA` there if
-you want to adjust his voice; the "extra personality notes" field on the settings page
-layers on top without needing to touch code.
+BrainFrog's personality lives in `app/frog_voice/persona.py`. `CORE_PERSONA` (who he is,
+how he talks) always applies; on top of that, `CHAT_READING_RULES` (strictly the
+messages, no commentary) is used only while reading chat, and `TALK_RULES` (full
+personality, banter welcome) only during an actual conversation. The "extra personality
+notes" field on the settings page layers on top of either, without touching code.
 
 ## Safety
 Chat text from viewers is always handed to the model inside a clearly marked, explicitly

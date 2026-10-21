@@ -84,6 +84,17 @@ def read_now():
     return jsonify(ok=True)
 
 
+@app.post("/api/ask")
+def ask():
+    """Lets you try the conversation side (wake word + a question) from the
+    settings page, without needing a working mic."""
+    question = (request.get_json(force=True) or {}).get("text", "").strip()
+    if not question:
+        return jsonify(ok=False, error="empty"), 400
+    engine.ask(question)
+    return jsonify(ok=True)
+
+
 @app.get("/api/chat")
 def chat_status():
     return jsonify(
